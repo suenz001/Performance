@@ -12,14 +12,28 @@ const App: React.FC = () => {
   const [records, setRecords] = useState<ExtractedRecord[]>([]);
   const [status, setStatus] = useState<ProcessingStatus | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
 
-  const handleFilesSelected = useCallback(async (files: File[]) => {
+  // 1. Modified: Only store files, don't start processing yet
+  const handleFilesSelected = useCallback((files: File[]) => {
+    setPendingFiles(files);
+    setRecords([]);
+    setErrorMsg(null);
+    setAppState(AppState.IDLE);
+    setStatus(null);
+  }, []);
+
+  // 2. New: The actual processing logic moved here
+  const handleStartProcessing = useCallback(async () => {
+    if (pendingFiles.length === 0) return;
+
     setAppState(AppState.PROCESSING);
     setRecords([]);
     setErrorMsg(null);
-    setStatus({ total: files.length, current: 0, filename: '初始化中...' });
+    setStatus({ total: pendingFiles.length, current: 0, filename: '初始化中...' });
 
     const allRecords: ExtractedRecord[] = [];
+    const files = pendingFiles; // Use the pending files
 
     try {
       for (let i = 0; i < files.length; i++) {
@@ -87,7 +101,7 @@ const App: React.FC = () => {
     } finally {
       // Don't clear status immediately so user sees 100%
     }
-  }, []);
+  }, [pendingFiles]);
 
   const handleExportTxt = useCallback(() => {
     if (records.length === 0) return;
@@ -134,8 +148,13 @@ const App: React.FC = () => {
   const handleReset = useCallback(() => {
     setAppState(AppState.IDLE);
     setRecords([]);
+    setPendingFiles([]); // Clear pending files too
     setErrorMsg(null);
     setStatus(null);
+  }, []);
+
+  const handleClearPending = useCallback(() => {
+    setPendingFiles([]);
   }, []);
 
   return (
@@ -151,8 +170,56 @@ const App: React.FC = () => {
         </div>
 
         <div className="bg-white rounded-2xl shadow-xl p-6 sm:p-8">
-          {appState === AppState.IDLE && (
-            <DropZone onFilesSelected={handleFilesSelected} disabled={false} />
+          {/* State: IDLE or ERROR (allowing re-selection) */}
+          {(appState === AppState.IDLE || appState === AppState.ERROR) && (
+            <div className="space-y-6">
+              <DropZone onFilesSelected={handleFilesSelected} disabled={false} />
+              
+              {/* Selected Files List & Action Button */}
+              {pendingFiles.length > 0 && (
+                <div className="bg-slate-50 rounded-xl p-6 border border-slate-200">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-semibold text-slate-800 flex items-center">
+                      <svg className="w-5 h-5 mr-2 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      已選擇檔案 ({pendingFiles.length})
+                    </h3>
+                    <button 
+                      onClick={handleClearPending}
+                      className="text-sm text-red-500 hover:text-red-700 font-medium px-2 py-1 rounded hover:bg-red-50 transition-colors"
+                    >
+                      清除全部
+                    </button>
+                  </div>
+                  
+                  <ul className="space-y-2 mb-6 max-h-48 overflow-y-auto">
+                    {pendingFiles.map((file, idx) => (
+                      <li key={idx} className="text-sm text-slate-600 flex items-center bg-white p-2 rounded border border-slate-100">
+                        <span className="w-2 h-2 bg-slate-400 rounded-full mr-3"></span>
+                        {file.name}
+                        <span className="ml-auto text-xs text-slate-400">
+                          {(file.size / 1024).toFixed(1)} KB
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+
+                  <div className="flex justify-center">
+                    <button
+                      onClick={handleStartProcessing}
+                      className="w-full sm:w-auto px-8 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 shadow-md hover:shadow-lg transform transition-all active:scale-95 flex items-center justify-center"
+                    >
+                      <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      開始擷取資料
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           {appState === AppState.PROCESSING && status && (
@@ -176,14 +243,7 @@ const App: React.FC = () => {
                  </div>
                  <p className="text-sm whitespace-pre-wrap leading-relaxed">{errorMsg}</p>
                </div>
-               <div className="flex justify-center gap-4">
-                 <button
-                   onClick={handleReset}
-                   className="px-4 py-2 bg-slate-200 text-slate-800 rounded-lg hover:bg-slate-300 font-medium transition"
-                 >
-                   重試
-                 </button>
-               </div>
+               {/* Note: Retry button logic is covered by the IDLE state showing the "Start" button again if files are still there */}
             </div>
           )}
 
