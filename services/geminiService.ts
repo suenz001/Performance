@@ -2,7 +2,8 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { ExtractedRecord } from "../types";
 
 // Initialize Gemini Client
-const ai = new GoogleGenAI({ apiKey:  "AIzaSyBPuPIwcPlFPTwhF5-p0bj0FpJfhessz6U" });
+// The API key must be obtained exclusively from the environment variable process.env.API_KEY.
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 const MODEL_NAME = "gemini-3-flash-preview";
 
