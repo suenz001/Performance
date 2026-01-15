@@ -1,0 +1,5 @@
+{
+  "name": "考績評分清冊擷取工具",
+  "description": "使用 Gemini AI 從 PDF 考績文件中自動擷取姓名、單位/職稱及主管擬評分數。",
+  "requestFramePermissions": []
+}
