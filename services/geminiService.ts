@@ -3,7 +3,7 @@ import { ExtractedRecord } from "../types";
 
 const getAIClient = () => {
   const apiKey = process.env.API_KEY;
-  if (!apiKey || apiKey.length < 10) {
+  if (!apiKey || apiKey.length < 10 || apiKey.includes('process.env')) {
     throw new Error("API_KEY_NOT_SET");
   }
   return new GoogleGenAI({ apiKey });
@@ -92,7 +92,12 @@ export const extractDataFromDocument = async ({
     }));
   } catch (error: any) {
     console.error("Gemini Extraction Error:", error);
-    const errorStr = error.toString();
+    const errorStr = error.toString().toLowerCase();
+    
+    // 偵測金鑰失效、過期或被停用
+    if (errorStr.includes("expired") || errorStr.includes("400") || errorStr.includes("invalid")) {
+      throw new Error("API_KEY_INVALID");
+    }
     
     if (errorStr.includes("403") || errorStr.includes("leaked")) {
       throw new Error("API_KEY_LEAKED");
