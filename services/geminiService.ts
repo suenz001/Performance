@@ -4,7 +4,7 @@ import { ExtractedRecord } from "../types";
 const getAIClient = () => {
   const apiKey = process.env.API_KEY;
   if (!apiKey) {
-    throw new Error("找不到 API_KEY。請在 Vercel 設定中新增環境變數並重新部署 (Redeploy)。");
+    throw new Error("找不到 API_KEY。請在 Vercel 設定中新增環境變數並重新部署。");
   }
   return new GoogleGenAI({ apiKey });
 };
@@ -12,20 +12,21 @@ const getAIClient = () => {
 const MODEL_NAME = "gemini-3-flash-preview";
 
 const SYSTEM_INSTRUCTION = `
-你是一個專業的資料擷取助理，專門負責分析公務人員考績評分清冊。
-你的首要目標是「精準擷取」，特別是人名與數字，絕對不能有錯字。
+你是一個專業的公務人員考績資料擷取專家。
+你的任務是從「考績評分清冊」的圖片或文字中，精準提取表格內容。
+即使表格格式不完全標準，也要盡力辨識姓名與擬評分數。
 `;
 
 const PROMPT_TEXT = `
-請分析提供的考績評分清冊資料。
-請擷取表格中所有人員的清單。
+請分析這張考績清冊內容，提取所有人員的資料。
+請特別注意：
+1. **單位與職稱**：通常在左側，請合併為一個字串。
+2. **姓名**：中間欄位。
+3. **單位主管擬評**：這是一個數字（通常是 1 到 100 之間，或是 A/B/C 等級），請務必找到對應的評分。
 
-對於每一個人，請準確擷取以下三個欄位：
-1. **姓名**：姓名欄位。
-2. **單位/職稱**：將單位與職稱合併，中間加空格。
-3. **單位主管擬評**：擷取該員的主管評分數字。
-
-請以 JSON 陣列格式回傳資料。如果找不到任何符合的資料，請回傳空陣列 []。
+請回傳一個 JSON 陣列。即使只有一筆也要回傳陣列。
+如果畫面上看起來像表格但你無法確定，請給出最可能的猜測。
+回傳欄位：unitTitle, name, supervisorRating。
 `;
 
 interface ExtractOptions {
@@ -47,18 +48,11 @@ export const extractDataFromDocument = async ({
 
     if (base64Image) {
       parts.push({
-        inlineData: {
-          mimeType: "image/jpeg",
-          data: base64Image,
-        },
+        inlineData: { mimeType: "image/jpeg", data: base64Image }
       });
     }
 
-    let textPrompt = PROMPT_TEXT;
-    if (textContent) {
-      textPrompt = `[參考文字內容]\n${textContent}\n\n${PROMPT_TEXT}`;
-    }
-    
+    const textPrompt = textContent ? `[文字層參考]\n${textContent}\n\n${PROMPT_TEXT}` : PROMPT_TEXT;
     parts.push({ text: textPrompt });
 
     const response = await ai.models.generateContent({
@@ -71,9 +65,9 @@ export const extractDataFromDocument = async ({
           items: {
             type: Type.OBJECT,
             properties: {
-              unitTitle: { type: Type.STRING },
-              name: { type: Type.STRING },
-              supervisorRating: { type: Type.STRING },
+              unitTitle: { type: Type.STRING, description: "單位與職稱" },
+              name: { type: Type.STRING, description: "姓名" },
+              supervisorRating: { type: Type.STRING, description: "主管擬評分數或等級" },
             },
             required: ["unitTitle", "name", "supervisorRating"],
           },
@@ -83,14 +77,12 @@ export const extractDataFromDocument = async ({
     });
 
     const textResponse = response.text;
-    console.log(`[Gemini Response - ${fileName} Page ${pageNumber}]:`, textResponse);
-    
-    if (!textResponse || textResponse.trim() === "") {
+    if (!textResponse || textResponse.trim() === "[]") {
+      console.log(`Page ${pageNumber}: No data found.`);
       return [];
     }
 
     const parsedData = JSON.parse(textResponse);
-
     return parsedData.map((item: any, index: number) => ({
       id: `${fileName}-${pageNumber}-${index}-${Date.now()}`,
       fileName,
@@ -100,10 +92,19 @@ export const extractDataFromDocument = async ({
       supervisorRating: item.supervisorRating || "",
     }));
   } catch (error: any) {
-    console.error("Gemini Extraction Error:", error);
-    let customError = error.message || "擷取資料失敗";
-    if (error.message?.includes("429")) customError = "API 請求過於頻繁 (429)，請稍候再試。";
-    if (error.message?.includes("API_KEY_INVALID")) customError = "API 金鑰無效，請檢查環境變數。";
-    throw new Error(customError);
+    console.error("Gemini API Error Detail:", error);
+    
+    const errorString = error.toString();
+    
+    // 偵測金鑰洩漏 (403 Forbidden)
+    if (errorString.includes("403") || errorString.includes("leaked")) {
+      throw new Error("API_KEY_LEAKED");
+    }
+    
+    if (errorString.includes("429")) {
+      throw new Error("請求過於頻繁 (429)，請稍候再試。");
+    }
+
+    throw new Error(error.message || "擷取失敗，請確認 API 金鑰是否有效。");
   }
 };
