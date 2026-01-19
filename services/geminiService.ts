@@ -3,7 +3,13 @@ import { ExtractedRecord } from "../types";
 
 // Initialize Gemini Client
 // The API key must be obtained exclusively from the environment variable process.env.API_KEY.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const getAIClient = () => {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) {
+    throw new Error("找不到 API_KEY。請在 Vercel 設定中新增環境變數並重新部署。");
+  }
+  return new GoogleGenAI({ apiKey });
+};
 
 const MODEL_NAME = "gemini-3-flash-preview";
 
@@ -37,9 +43,9 @@ const PROMPT_TEXT = `
 
 interface ExtractOptions {
   base64Image?: string;
-  textContent?: string; // Used for PDF text layer OR pure DOCX text
+  textContent?: string;
   fileName: string;
-  pageNumber: number; // 1 for DOCX
+  pageNumber: number;
 }
 
 export const extractDataFromDocument = async ({
@@ -49,9 +55,9 @@ export const extractDataFromDocument = async ({
   pageNumber
 }: ExtractOptions): Promise<ExtractedRecord[]> => {
   try {
+    const ai = getAIClient();
     const parts: any[] = [];
 
-    // Add Image part if it exists (PDF)
     if (base64Image) {
       parts.push({
         inlineData: {
@@ -61,9 +67,6 @@ export const extractDataFromDocument = async ({
       });
     }
 
-    // Add Text part
-    // If it's a DOCX (no image), this is the main content.
-    // If it's a PDF, this is the supplementary text layer.
     let textPrompt = PROMPT_TEXT;
     if (textContent) {
       if (base64Image) {
@@ -103,7 +106,6 @@ export const extractDataFromDocument = async ({
 
     const parsedData = JSON.parse(textResponse);
 
-    // Map to internal structure with IDs
     return parsedData.map((item: any, index: number) => ({
       id: `${fileName}-${pageNumber}-${index}-${Date.now()}`,
       fileName,
@@ -112,9 +114,23 @@ export const extractDataFromDocument = async ({
       name: item.name || "",
       supervisorRating: item.supervisorRating || "",
     }));
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini Extraction Error:", error);
-    // Return empty array on error to allow processing to continue
-    return [];
+    
+    // 辨識常見錯誤代碼
+    let customError = "擷取資料失敗";
+    if (error.message?.includes("429")) {
+      customError = "API 請求次數過多 (Rate Limit Exceeded)。請稍候一分鐘再試，或更換付費版 API 金鑰。";
+    } else if (error.message?.includes("401") || error.message?.includes("API_KEY_INVALID")) {
+      customError = "API 金鑰無效或已過期。請檢查 Vercel 環境變數設定。";
+    } else if (error.message?.includes("403")) {
+      customError = "權限不足。請確認 API 金鑰是否具有訪問 Gemini API 的權限，或是否已開啟帳單設定。";
+    } else if (error.message?.includes("500")) {
+      customError = "Google 伺服器忙碌中，請稍後再試。";
+    } else if (error.message) {
+      customError = error.message;
+    }
+
+    throw new Error(customError);
   }
 };
