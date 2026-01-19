@@ -13,13 +13,11 @@ const App: React.FC = () => {
   const [status, setStatus] = useState<ProcessingStatus | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
-  const [duplicateNames, setDuplicateNames] = useState<string[]>([]);
 
   // 取得遮罩後的金鑰用於除錯
   const maskedApiKey = useMemo(() => {
     const key = process.env.API_KEY;
     if (!key || key === 'undefined' || key.length < 10) return "未設定或讀取失敗";
-    // 顯示前5碼與後5碼，方便使用者對照 AI Studio 上的內容
     return `${key.substring(0, 5)}....${key.substring(key.length - 5)}`;
   }, []);
 
@@ -31,12 +29,27 @@ const App: React.FC = () => {
     return 'configured';
   }, []);
 
-  const handleFilesSelected = useCallback((files: File[]) => {
-    setPendingFiles(files);
-    setRecords([]);
+  const handleFilesSelected = useCallback((newFiles: File[]) => {
+    setPendingFiles(prev => {
+      // 避免重複加入同一個檔案對象
+      const existingNames = prev.map(f => f.name + f.size);
+      const filteredNewFiles = newFiles.filter(nf => !existingNames.includes(nf.name + nf.size));
+      return [...prev, ...filteredNewFiles];
+    });
     setErrorMsg(null);
+    if (appState === AppState.ERROR || appState === AppState.COMPLETED) {
+      setAppState(AppState.IDLE);
+    }
+  }, [appState]);
+
+  const removeFile = (index: number) => {
+    setPendingFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const clearFiles = () => {
+    setPendingFiles([]);
     setAppState(AppState.IDLE);
-  }, []);
+  };
 
   const handleStartProcessing = useCallback(async () => {
     if (pendingFiles.length === 0) return;
@@ -78,13 +91,6 @@ const App: React.FC = () => {
         }
         setStatus({ total: pendingFiles.length, current: i + 1, filename: file.name });
       }
-
-      const nameCounts: Record<string, number> = {};
-      allRecords.forEach(r => {
-        const n = r.name.trim();
-        if (n) nameCounts[n] = (nameCounts[n] || 0) + 1;
-      });
-      setDuplicateNames(Object.keys(nameCounts).filter(n => nameCounts[n] > 1));
       setAppState(AppState.COMPLETED);
     } catch (err: any) {
       console.error("Catching App Error:", err);
@@ -147,6 +153,69 @@ const App: React.FC = () => {
               <div className="space-y-8">
                 <DropZone onFilesSelected={handleFilesSelected} disabled={appState === AppState.PROCESSING} />
                 
+                {pendingFiles.length > 0 && (
+                  <div className="space-y-4 animate-in fade-in duration-300">
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-sm font-bold text-slate-700 flex items-center">
+                        <svg className="w-4 h-4 mr-1 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
+                          <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z" />
+                        </svg>
+                        待處理檔案 ({pendingFiles.length})
+                      </h3>
+                      <button 
+                        onClick={clearFiles}
+                        className="text-xs text-red-500 hover:text-red-700 font-medium transition-colors flex items-center"
+                      >
+                        <svg className="w-3.5 h-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                        清空全部
+                      </button>
+                    </div>
+
+                    <div className="max-height-[300px] overflow-y-auto space-y-2 pr-2 scrollbar-thin scrollbar-thumb-slate-200">
+                      {pendingFiles.map((file, idx) => (
+                        <div key={`${file.name}-${idx}`} className="group flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 hover:bg-white hover:shadow-md transition-all">
+                          <div className="flex items-center min-w-0">
+                            <div className="bg-white p-2 rounded-lg mr-3 shadow-sm">
+                              {file.name.endsWith('.pdf') ? (
+                                <svg className="w-5 h-5 text-red-500" fill="currentColor" viewBox="0 0 20 20"><path d="M9 2a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V6.414A2 2 0 0016.414 5L14 2.586A2 2 0 0012.586 2H9z" /><path d="M3 8a2 2 0 012-2v10h8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" /></svg>
+                              ) : (
+                                <svg className="w-5 h-5 text-blue-500" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" /></svg>
+                              )}
+                            </div>
+                            <div className="truncate">
+                              <p className="text-sm font-semibold text-slate-700 truncate">{file.name}</p>
+                              <p className="text-[10px] text-slate-400 uppercase">{(file.size / 1024).toFixed(0)} KB • {file.name.split('.').pop()}</p>
+                            </div>
+                          </div>
+                          <button 
+                            onClick={() => removeFile(idx)}
+                            className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                            title="移除此檔案"
+                          >
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="pt-4 flex flex-col items-center">
+                      <button 
+                        onClick={handleStartProcessing} 
+                        className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-xl shadow-blue-200 hover:bg-blue-700 hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center space-x-2"
+                      >
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                        <span>開始執行 AI 辨識 ({pendingFiles.length} 個檔案)</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+                
                 {appState === AppState.ERROR && (
                   <div className="bg-red-50 border-2 border-red-200 p-6 rounded-2xl animate-in fade-in slide-in-from-top-4 duration-300">
                     <div className="flex items-start">
@@ -156,61 +225,18 @@ const App: React.FC = () => {
                         </svg>
                       </div>
                       <div className="flex-1 text-slate-800">
-                        <h3 className="text-red-900 font-extrabold text-lg mb-2">
-                          系統執行錯誤 (可能是金鑰同步延遲)
-                        </h3>
-                        
+                        <h3 className="text-red-900 font-extrabold text-lg mb-2">系統執行錯誤</h3>
                         <div className="text-sm space-y-4 leading-relaxed">
                           <p className="font-medium">目前的錯誤回報：<span className="text-red-700 bg-red-100 px-2 py-0.5 rounded font-mono">{errorMsg}</span></p>
-                          
                           <div className="bg-white/90 p-5 rounded-xl border border-red-200 text-xs text-slate-700 shadow-sm space-y-4">
-                            <div className="border-b border-red-100 pb-2">
-                              <p className="font-bold text-red-900 flex items-center mb-1 text-sm">
-                                <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                                </svg>
-                                排除疑難清單 (必看)
-                              </p>
-                              <p className="text-slate-500 italic">如果已經更新了金鑰還是失敗，請檢查以下 3 點：</p>
-                            </div>
-
-                            <div className="space-y-3">
-                              <div className="p-3 bg-amber-50 rounded-lg border border-amber-100">
-                                <p className="font-bold text-amber-900 mb-1">1. 檢查目前讀取到的金鑰片段：</p>
-                                <code className="bg-slate-800 text-slate-200 px-3 py-1 rounded select-all font-mono text-sm block w-fit mb-1">{maskedApiKey}</code>
-                                <p className="text-slate-600">請核對這前後 5 碼。如果跟你新產生的金鑰「對不起來」，表示 Vercel 還在用舊的代碼。</p>
-                              </div>
-
-                              <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
-                                <p className="font-bold text-blue-900 mb-1">2. Vercel Redeploy 重要步驟：</p>
-                                <p>在 Vercel 的 Deployments 點選 <b>Redeploy</b> 時，彈出視窗下方有一個選項 <b>"Use existing Build Cache"</b>，請務必<span className="text-red-600 font-bold underline">「取消勾選」</span>再按 Redeploy。</p>
-                              </div>
-
-                              <div className="p-3 bg-purple-50 rounded-lg border border-purple-100">
-                                <p className="font-bold text-purple-900 mb-1">3. 瀏覽器強迫重新讀取：</p>
-                                <p>重新部署完後，請在網頁按下 <kbd className="bg-white px-1 border border-slate-300 rounded shadow-sm">Ctrl</kbd> + <kbd className="bg-white px-1 border border-slate-300 rounded shadow-sm">F5</kbd> 或在手機重新整理，確保瀏覽器快取已被清除。</p>
-                              </div>
-                            </div>
+                            <p className="font-bold text-red-900">除錯診斷：</p>
+                            <code className="bg-slate-800 text-slate-200 px-3 py-1 rounded block w-fit font-mono text-sm">{maskedApiKey}</code>
+                            <p className="text-slate-500 italic">※ 若金鑰不符，請於 Vercel 更新並「不使用快取」Redeploy。</p>
                           </div>
                         </div>
-                        
-                        <button onClick={handleReset} className="mt-6 px-5 py-2 bg-red-600 text-white rounded-lg text-sm font-bold hover:bg-red-700 transition-all active:scale-95 shadow-lg shadow-red-100">
-                          返回重新嘗試
-                        </button>
+                        <button onClick={handleReset} className="mt-6 px-5 py-2 bg-red-600 text-white rounded-lg text-sm font-bold hover:bg-red-700 transition-all shadow-lg">返回重新嘗試</button>
                       </div>
                     </div>
-                  </div>
-                )}
-
-                {pendingFiles.length > 0 && appState !== AppState.ERROR && (
-                  <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 flex flex-col items-center">
-                    <p className="text-sm text-blue-800 font-bold mb-4">已準備好 {pendingFiles.length} 個檔案</p>
-                    <button 
-                      onClick={handleStartProcessing} 
-                      className="w-full sm:w-64 py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-xl shadow-blue-200 hover:bg-blue-700 hover:-translate-y-0.5 active:translate-y-0 transition-all"
-                    >
-                      開始執行 AI 辨識
-                    </button>
                   </div>
                 )}
               </div>
@@ -239,7 +265,7 @@ const App: React.FC = () => {
                   <div className="flex flex-wrap w-full sm:w-auto gap-2">
                     <button onClick={handleExportCsv} className="flex-1 sm:flex-none px-4 py-2.5 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 shadow-md transition-all text-sm">匯出 CSV</button>
                     <button onClick={handleExportTxt} className="flex-1 sm:flex-none px-4 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-md transition-all text-sm">匯出 TXT</button>
-                    <button onClick={handleReset} className="flex-1 sm:flex-none px-4 py-2.5 bg-white border border-slate-200 text-slate-500 rounded-xl text-sm font-medium hover:bg-slate-50">重啟</button>
+                    <button onClick={handleReset} className="flex-1 sm:flex-none px-4 py-2.5 bg-white border border-slate-200 text-slate-500 rounded-xl text-sm font-medium hover:bg-slate-50">重置全部</button>
                   </div>
                 </div>
                 <ResultList records={records} />
