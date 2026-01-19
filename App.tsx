@@ -13,6 +13,7 @@ const App: React.FC = () => {
   const [status, setStatus] = useState<ProcessingStatus | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [duplicateNames, setDuplicateNames] = useState<string[]>([]);
 
   // 取得遮罩後的金鑰用於除錯
   const maskedApiKey = useMemo(() => {
@@ -31,7 +32,6 @@ const App: React.FC = () => {
 
   const handleFilesSelected = useCallback((newFiles: File[]) => {
     setPendingFiles(prev => {
-      // 避免重複加入同一個檔案對象
       const existingNames = prev.map(f => f.name + f.size);
       const filteredNewFiles = newFiles.filter(nf => !existingNames.includes(nf.name + nf.size));
       return [...prev, ...filteredNewFiles];
@@ -63,6 +63,7 @@ const App: React.FC = () => {
     setAppState(AppState.PROCESSING);
     setRecords([]);
     setErrorMsg(null);
+    setDuplicateNames([]);
     setStatus({ total: pendingFiles.length, current: 0, filename: '準備中...' });
 
     try {
@@ -91,6 +92,15 @@ const App: React.FC = () => {
         }
         setStatus({ total: pendingFiles.length, current: i + 1, filename: file.name });
       }
+
+      // 計算重複姓名
+      const nameCounts: Record<string, number> = {};
+      allRecords.forEach(r => {
+        const n = r.name.trim();
+        if (n) nameCounts[n] = (nameCounts[n] || 0) + 1;
+      });
+      setDuplicateNames(Object.keys(nameCounts).filter(n => nameCounts[n] > 1));
+      
       setAppState(AppState.COMPLETED);
     } catch (err: any) {
       console.error("Catching App Error:", err);
@@ -103,6 +113,7 @@ const App: React.FC = () => {
     setAppState(AppState.IDLE);
     setRecords([]);
     setPendingFiles([]);
+    setDuplicateNames([]);
     setErrorMsg(null);
     setStatus(null);
   };
@@ -173,7 +184,7 @@ const App: React.FC = () => {
                       </button>
                     </div>
 
-                    <div className="max-height-[300px] overflow-y-auto space-y-2 pr-2 scrollbar-thin scrollbar-thumb-slate-200">
+                    <div className="max-h-[300px] overflow-y-auto space-y-2 pr-2 scrollbar-thin scrollbar-thumb-slate-200">
                       {pendingFiles.map((file, idx) => (
                         <div key={`${file.name}-${idx}`} className="group flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 hover:bg-white hover:shadow-md transition-all">
                           <div className="flex items-center min-w-0">
@@ -268,7 +279,7 @@ const App: React.FC = () => {
                     <button onClick={handleReset} className="flex-1 sm:flex-none px-4 py-2.5 bg-white border border-slate-200 text-slate-500 rounded-xl text-sm font-medium hover:bg-slate-50">重置全部</button>
                   </div>
                 </div>
-                <ResultList records={records} />
+                <ResultList records={records} duplicateNames={duplicateNames} />
               </div>
             )}
           </div>
