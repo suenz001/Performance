@@ -3,8 +3,8 @@ import { ExtractedRecord } from "../types";
 
 const getAIClient = () => {
   const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    throw new Error("找不到 API_KEY。請在 Vercel 設定中新增環境變數並重新部署。");
+  if (!apiKey || apiKey.length < 10) {
+    throw new Error("API_KEY_NOT_SET");
   }
   return new GoogleGenAI({ apiKey });
 };
@@ -12,21 +12,23 @@ const getAIClient = () => {
 const MODEL_NAME = "gemini-3-flash-preview";
 
 const SYSTEM_INSTRUCTION = `
-你是一個專業的公務人員考績資料擷取專家。
-你的任務是從「考績評分清冊」的圖片或文字中，精準提取表格內容。
-即使表格格式不完全標準，也要盡力辨識姓名與擬評分數。
+你是一個專業的台灣公務機關考績清冊資料擷取專家。
+你的任務是從表格影像或文字中，精準提取「單位/職稱」、「姓名」與「單位主管擬評」三項資訊。
 `;
 
 const PROMPT_TEXT = `
-請分析這張考績清冊內容，提取所有人員的資料。
-請特別注意：
-1. **單位與職稱**：通常在左側，請合併為一個字串。
-2. **姓名**：中間欄位。
-3. **單位主管擬評**：這是一個數字（通常是 1 到 100 之間，或是 A/B/C 等級），請務必找到對應的評分。
+請分析提供的考績評分清冊。
+請提取表格中每一位受評人的資訊。
 
-請回傳一個 JSON 陣列。即使只有一筆也要回傳陣列。
-如果畫面上看起來像表格但你無法確定，請給出最可能的猜測。
-回傳欄位：unitTitle, name, supervisorRating。
+欄位說明：
+1. **單位與職稱**：通常在表格的最左側欄位，請將兩者合併（例如：教務處 組長）。
+2. **姓名**：受評人的真實姓名。
+3. **單位主管擬評**：這可能是分數（如 85, 90）或是等級（如 甲, A），請務必精準對應。
+
+規則：
+- 如果該頁面不是考績表，請回傳空陣列 []。
+- 請以 JSON 陣列格式回傳。
+- 欄位名稱必須為：unitTitle, name, supervisorRating。
 `;
 
 interface ExtractOptions {
@@ -52,7 +54,7 @@ export const extractDataFromDocument = async ({
       });
     }
 
-    const textPrompt = textContent ? `[文字層參考]\n${textContent}\n\n${PROMPT_TEXT}` : PROMPT_TEXT;
+    const textPrompt = textContent ? `[文字層資訊可供參考]\n${textContent}\n\n${PROMPT_TEXT}` : PROMPT_TEXT;
     parts.push({ text: textPrompt });
 
     const response = await ai.models.generateContent({
@@ -65,9 +67,9 @@ export const extractDataFromDocument = async ({
           items: {
             type: Type.OBJECT,
             properties: {
-              unitTitle: { type: Type.STRING, description: "單位與職稱" },
-              name: { type: Type.STRING, description: "姓名" },
-              supervisorRating: { type: Type.STRING, description: "主管擬評分數或等級" },
+              unitTitle: { type: Type.STRING },
+              name: { type: Type.STRING },
+              supervisorRating: { type: Type.STRING },
             },
             required: ["unitTitle", "name", "supervisorRating"],
           },
@@ -77,10 +79,7 @@ export const extractDataFromDocument = async ({
     });
 
     const textResponse = response.text;
-    if (!textResponse || textResponse.trim() === "[]") {
-      console.log(`Page ${pageNumber}: No data found.`);
-      return [];
-    }
+    if (!textResponse || textResponse.trim() === "[]") return [];
 
     const parsedData = JSON.parse(textResponse);
     return parsedData.map((item: any, index: number) => ({
@@ -92,19 +91,13 @@ export const extractDataFromDocument = async ({
       supervisorRating: item.supervisorRating || "",
     }));
   } catch (error: any) {
-    console.error("Gemini API Error Detail:", error);
+    console.error("Gemini Extraction Error:", error);
+    const errorStr = error.toString();
     
-    const errorString = error.toString();
-    
-    // 偵測金鑰洩漏 (403 Forbidden)
-    if (errorString.includes("403") || errorString.includes("leaked")) {
+    if (errorStr.includes("403") || errorStr.includes("leaked")) {
       throw new Error("API_KEY_LEAKED");
     }
     
-    if (errorString.includes("429")) {
-      throw new Error("請求過於頻繁 (429)，請稍候再試。");
-    }
-
-    throw new Error(error.message || "擷取失敗，請確認 API 金鑰是否有效。");
+    throw new Error(error.message || "AI 服務暫時無法回應，請稍後再試。");
   }
 };
