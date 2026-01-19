@@ -13,12 +13,15 @@ const App: React.FC = () => {
   const [status, setStatus] = useState<ProcessingStatus | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  // New state for storing duplicate names
+  const [duplicateNames, setDuplicateNames] = useState<string[]>([]);
 
   // 1. Modified: Only store files, don't start processing yet
   const handleFilesSelected = useCallback((files: File[]) => {
     setPendingFiles(files);
     setRecords([]);
     setErrorMsg(null);
+    setDuplicateNames([]);
     setAppState(AppState.IDLE);
     setStatus(null);
   }, []);
@@ -29,6 +32,7 @@ const App: React.FC = () => {
 
     setAppState(AppState.PROCESSING);
     setRecords([]);
+    setDuplicateNames([]);
     setErrorMsg(null);
     setStatus({ total: pendingFiles.length, current: 0, filename: '初始化中...' });
 
@@ -92,6 +96,18 @@ const App: React.FC = () => {
           filename: file.name,
         });
       }
+
+      // 3. Detect Duplicates
+      const nameCounts: Record<string, number> = {};
+      allRecords.forEach(record => {
+        const name = record.name.trim();
+        if (name) {
+          nameCounts[name] = (nameCounts[name] || 0) + 1;
+        }
+      });
+      const foundDuplicates = Object.keys(nameCounts).filter(name => nameCounts[name] > 1);
+      setDuplicateNames(foundDuplicates);
+
       setAppState(AppState.COMPLETED);
     } catch (err: any) {
       console.error(err);
@@ -149,6 +165,7 @@ const App: React.FC = () => {
     setAppState(AppState.IDLE);
     setRecords([]);
     setPendingFiles([]); // Clear pending files too
+    setDuplicateNames([]);
     setErrorMsg(null);
     setStatus(null);
   }, []);
@@ -243,7 +260,6 @@ const App: React.FC = () => {
                  </div>
                  <p className="text-sm whitespace-pre-wrap leading-relaxed">{errorMsg}</p>
                </div>
-               {/* Note: Retry button logic is covered by the IDLE state showing the "Start" button again if files are still there */}
             </div>
           )}
 
@@ -265,6 +281,34 @@ const App: React.FC = () => {
                      </button>
                   </div>
                 </div>
+
+                {/* Duplicate Names Warning */}
+                {duplicateNames.length > 0 && (
+                  <div className="w-full mb-4 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded shadow-sm">
+                    <div className="flex">
+                      <div className="flex-shrink-0">
+                        <svg className="h-5 w-5 text-yellow-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                      <div className="ml-3">
+                        <h3 className="text-sm font-medium text-yellow-800">
+                          發現同名同姓人員
+                        </h3>
+                        <div className="mt-2 text-sm text-yellow-700">
+                          <p>
+                            以下姓名在本次擷取中出現超過一次，使用 Excel VLOOKUP 時請特別留意：
+                          </p>
+                          <ul className="list-disc pl-5 mt-1 space-y-1">
+                            {duplicateNames.map((name, i) => (
+                              <li key={i} className="font-semibold">{name}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="w-full flex justify-end gap-3 sticky top-0 z-10 bg-white py-2 border-b border-slate-100 mb-2">
                    <button
