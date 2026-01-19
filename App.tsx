@@ -113,6 +113,18 @@ const App: React.FC = () => {
     link.click();
   };
 
+  const handleExportTxt = () => {
+    const content = records.map(r => 
+      `單位/職稱: ${r.unitTitle} | 姓名: ${r.name} | 單位主管擬評: ${r.supervisorRating} | 來源: ${r.fileName} (第 ${r.pageNumber} 頁)`
+    ).join('\n');
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `考績結果_${Date.now()}.txt`;
+    link.click();
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 py-10 px-4 font-sans text-slate-900">
       <div className="max-w-4xl mx-auto">
@@ -224,9 +236,10 @@ const App: React.FC = () => {
                       <span className="text-xs text-green-700">共擷取 {records.length} 筆資料</span>
                     </div>
                   </div>
-                  <div className="flex w-full sm:w-auto gap-2">
-                    <button onClick={handleExportCsv} className="flex-1 sm:flex-none px-6 py-3 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 shadow-lg shadow-green-100 transition-all">匯出 CSV</button>
-                    <button onClick={handleReset} className="flex-1 sm:flex-none px-6 py-3 bg-white border border-slate-200 text-slate-500 rounded-xl text-sm font-medium hover:bg-slate-50">重啟</button>
+                  <div className="flex flex-wrap w-full sm:w-auto gap-2">
+                    <button onClick={handleExportCsv} className="flex-1 sm:flex-none px-4 py-2.5 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 shadow-md transition-all text-sm">匯出 CSV</button>
+                    <button onClick={handleExportTxt} className="flex-1 sm:flex-none px-4 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-md transition-all text-sm">匯出 TXT</button>
+                    <button onClick={handleReset} className="flex-1 sm:flex-none px-4 py-2.5 bg-white border border-slate-200 text-slate-500 rounded-xl text-sm font-medium hover:bg-slate-50">重啟</button>
                   </div>
                 </div>
                 <ResultList records={records} />
