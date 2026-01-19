@@ -15,10 +15,19 @@ const App: React.FC = () => {
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [duplicateNames, setDuplicateNames] = useState<string[]>([]);
 
-  // 偵測 API Key 是否正確注入
+  // 取得遮罩後的金鑰用於除錯
+  const maskedApiKey = useMemo(() => {
+    const key = process.env.API_KEY;
+    if (!key || key === 'undefined' || key.length < 10) return "未設定或讀取失敗";
+    // 顯示前5碼與後5碼，方便使用者對照 AI Studio 上的內容
+    return `${key.substring(0, 5)}....${key.substring(key.length - 5)}`;
+  }, []);
+
   const apiKeyStatus = useMemo(() => {
     const key = process.env.API_KEY;
-    if (!key || key.length < 10 || key.includes('process.env')) return 'missing';
+    if (!key || key === 'undefined' || key.length < 10 || key.includes('process.env')) {
+      return 'missing';
+    }
     return 'configured';
   }, []);
 
@@ -78,8 +87,9 @@ const App: React.FC = () => {
       setDuplicateNames(Object.keys(nameCounts).filter(n => nameCounts[n] > 1));
       setAppState(AppState.COMPLETED);
     } catch (err: any) {
+      console.error("Catching App Error:", err);
       setAppState(AppState.ERROR);
-      setErrorMsg(err.message);
+      setErrorMsg(err.message || "發生未知錯誤");
     }
   }, [pendingFiles, apiKeyStatus]);
 
@@ -104,7 +114,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 py-10 px-4 font-sans">
+    <div className="min-h-screen bg-slate-50 py-10 px-4 font-sans text-slate-900">
       <div className="max-w-4xl mx-auto">
         <header className="flex justify-between items-center mb-6 bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
           <div>
@@ -133,27 +143,43 @@ const App: React.FC = () => {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                         </svg>
                       </div>
-                      <div className="flex-1">
+                      <div className="flex-1 text-slate-800">
                         <h3 className="text-red-900 font-extrabold text-lg mb-2">
-                          {errorMsg === "API_KEY_INVALID" ? "API 金鑰已失效 (Expired)" : "系統執行錯誤"}
+                          系統執行錯誤 (可能是金鑰同步延遲)
                         </h3>
                         
-                        <div className="text-sm text-red-800 space-y-3 leading-relaxed">
-                          {errorMsg === "API_KEY_INVALID" ? (
-                            <>
-                              <p>檢測到您的 API 金鑰已失效。這通常是因為金鑰被公開分享（如貼在聊天室）而被 Google 自動停用。</p>
-                              <div className="bg-white/60 p-4 rounded-xl border border-red-100 text-xs text-slate-700">
-                                <p className="font-bold text-red-900 mb-2">解決步驟：</p>
-                                <ol className="list-decimal pl-5 space-y-1">
-                                  <li>去 <a href="https://aistudio.google.com/app/apikey" target="_blank" className="underline font-bold text-blue-600">AI Studio</a> 生一個「全新」金鑰。</li>
-                                  <li>回到 Vercel 專案，在 <b>Settings > Environment Variables</b> 更新 <code>API_KEY</code>。</li>
-                                  <li><b>最關鍵：</b>到 <b>Deployments</b> 找到最新紀錄，點選 <b>Redeploy</b>。</li>
-                                </ol>
+                        <div className="text-sm space-y-4 leading-relaxed">
+                          <p className="font-medium">目前的錯誤回報：<span className="text-red-700 bg-red-100 px-2 py-0.5 rounded font-mono">{errorMsg}</span></p>
+                          
+                          <div className="bg-white/90 p-5 rounded-xl border border-red-200 text-xs text-slate-700 shadow-sm space-y-4">
+                            <div className="border-b border-red-100 pb-2">
+                              <p className="font-bold text-red-900 flex items-center mb-1 text-sm">
+                                <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                                </svg>
+                                排除疑難清單 (必看)
+                              </p>
+                              <p className="text-slate-500 italic">如果已經更新了金鑰還是失敗，請檢查以下 3 點：</p>
+                            </div>
+
+                            <div className="space-y-3">
+                              <div className="p-3 bg-amber-50 rounded-lg border border-amber-100">
+                                <p className="font-bold text-amber-900 mb-1">1. 檢查目前讀取到的金鑰片段：</p>
+                                <code className="bg-slate-800 text-slate-200 px-3 py-1 rounded select-all font-mono text-sm block w-fit mb-1">{maskedApiKey}</code>
+                                <p className="text-slate-600">請核對這前後 5 碼。如果跟你新產生的金鑰「對不起來」，表示 Vercel 還在用舊的代碼。</p>
                               </div>
-                            </>
-                          ) : (
-                            <p className="font-mono bg-white/40 p-3 rounded border border-red-100">{errorMsg}</p>
-                          )}
+
+                              <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+                                <p className="font-bold text-blue-900 mb-1">2. Vercel Redeploy 重要步驟：</p>
+                                <p>在 Vercel 的 Deployments 點選 <b>Redeploy</b> 時，彈出視窗下方有一個選項 <b>"Use existing Build Cache"</b>，請務必<span className="text-red-600 font-bold underline">「取消勾選」</span>再按 Redeploy。</p>
+                              </div>
+
+                              <div className="p-3 bg-purple-50 rounded-lg border border-purple-100">
+                                <p className="font-bold text-purple-900 mb-1">3. 瀏覽器強迫重新讀取：</p>
+                                <p>重新部署完後，請在網頁按下 <kbd className="bg-white px-1 border border-slate-300 rounded shadow-sm">Ctrl</kbd> + <kbd className="bg-white px-1 border border-slate-300 rounded shadow-sm">F5</kbd> 或在手機重新整理，確保瀏覽器快取已被清除。</p>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                         
                         <button onClick={handleReset} className="mt-6 px-5 py-2 bg-red-600 text-white rounded-lg text-sm font-bold hover:bg-red-700 transition-all active:scale-95 shadow-lg shadow-red-100">

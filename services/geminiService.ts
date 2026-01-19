@@ -3,7 +3,7 @@ import { ExtractedRecord } from "../types";
 
 const getAIClient = () => {
   const apiKey = process.env.API_KEY;
-  if (!apiKey || apiKey.length < 10 || apiKey.includes('process.env')) {
+  if (!apiKey || apiKey === 'undefined' || apiKey.length < 10 || apiKey.includes('process.env')) {
     throw new Error("API_KEY_NOT_SET");
   }
   return new GoogleGenAI({ apiKey });
@@ -91,16 +91,16 @@ export const extractDataFromDocument = async ({
       supervisorRating: item.supervisorRating || "",
     }));
   } catch (error: any) {
-    console.error("Gemini Extraction Error:", error);
+    console.error("Gemini Extraction Error Detail:", error);
     const errorStr = error.toString().toLowerCase();
     
-    // 偵測金鑰失效、過期或被停用
+    // 將 API 錯誤細節回傳給前端
     if (errorStr.includes("expired") || errorStr.includes("400") || errorStr.includes("invalid")) {
-      throw new Error("API_KEY_INVALID");
+      throw new Error(`API KEY 無效或已過期 (原始錯誤: ${error.message})`);
     }
     
-    if (errorStr.includes("403") || errorStr.includes("leaked")) {
-      throw new Error("API_KEY_LEAKED");
+    if (errorStr.includes("403")) {
+      throw new Error(`API KEY 權限不足或被限制 (403)`);
     }
     
     throw new Error(error.message || "AI 服務暫時無法回應，請稍後再試。");
